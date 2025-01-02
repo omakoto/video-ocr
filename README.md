@@ -1,16 +1,14 @@
 # video-ocr
 
+## Description
+
+Using OpenCV, open the first capture device and run OCR on the input.
 
 ## Installation
 
 ```
 $ ./00install.bash
 ```
-
-## Description
-
-Using OpenCV, open the first capture device and run OCR on the input.
-
 
 ## Installing dependencies
 
