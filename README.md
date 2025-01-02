@@ -4,6 +4,15 @@
 
 Using OpenCV, open the first capture device and run OCR on the input.
 
+## Usage
+
+
+Example:
+```
+video-ocr -input /dev/videoN  [-l LANG] [-w WIDTH] [-h HEIGHT]
+
+  LANG: Language for Tesseract (eng, jpn, etc)
+```
 ## Installation
 
 ```
