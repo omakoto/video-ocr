@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	"image/color"
 	"os"
 	"strings"
 	"sync"
@@ -15,15 +16,20 @@ import (
 )
 
 var (
-	sourceFile  = flag.String("f", "/dev/video0", "Input device file")
-	ocrInterval = flag.Int("i", 8, "Min interval for performing OCR")
-	sleep       = flag.Int("s", 1, "Sleep millis between frames")
-	languages   = flag.String("l", "eng", "Comma-separated list of languages")
-	width       = flag.Int("w", 1920, "Width of the video capture")
-	height      = flag.Int("h", 1080, "Height of the video capture")
-	verbose     = flag.Bool("v", false, "Make verbose")
-	fps         = flag.Int("fps", 30, "Capture FPS")
-	ocrScale    = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
+	sourceFile   = flag.String("f", "/dev/video0", "Input device file")
+	ocrInterval  = flag.Int("i", 8, "Min interval for performing OCR")
+	sleep        = flag.Int("s", 1, "Sleep millis between frames")
+	languages    = flag.String("l", "eng", "Comma-separated list of languages")
+	width        = flag.Int("w", 1920, "Width of the video capture")
+	height       = flag.Int("h", 1080, "Height of the video capture")
+	verbose      = flag.Bool("v", false, "Make verbose")
+	fps          = flag.Int("fps", 30, "Capture FPS")
+	ocrScale     = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
+	topMargin    = flag.Int("top-margin", 0, "Margin for feeding OCR")
+	bottomMargin = flag.Int("bottom-margin", 0, "Margin for feeding OCR")
+	leftMargin   = flag.Int("left-margin", 0, "Margin for feeding OCR")
+	rightMargin  = flag.Int("right-margin", 0, "Margin for feeding OCR")
+	margin       = flag.Int("margin", 0, "Margin for feeding OCR")
 )
 
 func toOutput(text string) string {
@@ -56,6 +62,21 @@ func main() {
 		*ocrScale = 0.1
 	} else if *ocrScale > 1 {
 		*ocrScale = 1
+	}
+
+	if *margin > 0 {
+		if *topMargin == 0 {
+			*topMargin = *margin
+		}
+		if *bottomMargin == 0 {
+			*bottomMargin = *margin
+		}
+		if *leftMargin == 0 {
+			*leftMargin = *margin
+		}
+		if *rightMargin == 0 {
+			*rightMargin = *margin
+		}
 	}
 
 	// Open the video source
@@ -128,6 +149,8 @@ func main() {
 	var readMillis atomic.Int32
 	readMillis.Store(-1)
 
+	ocrRect := image.Rect(*leftMargin, *topMargin, *width-*rightMargin, *height-*bottomMargin)
+
 	reader := func() {
 		if *verbose {
 			logf("# Reader started\n")
@@ -139,10 +162,9 @@ func main() {
 			defer gray.Close()
 			gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
 
+			rect := image.Rect(*leftMargin, *topMargin, *width-*rightMargin, *height-*bottomMargin)
+			gray = gray.Region(rect)
 			gocv.Resize(gray, &gray, image.Point{}, *ocrScale, *ocrScale, gocv.InterpolationLinear)
-
-			// // Shrink the image to 50% of the original size
-			// gocv.Resize(gray, &gray, image.Point{}, 0.5, 0.5, gocv.InterpolationLinear)
 
 			// Get image bytes
 			imgBytes, err := gocv.IMEncode(gocv.PNGFileExt, gray) // Or use 'thresh' if you did preprocessing
@@ -203,7 +225,12 @@ func main() {
 		}
 
 		if showVideo {
+			// Draw a rectangle on the window
+			// rect := image.Rect(*leftMargin, *topMargin, *width-*rightMargin, *height-*bottomMargin)
+			gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 3)
+
 			window.IMShow(img)
+
 			window.WaitKey(1) // Handle events.
 		}
 
