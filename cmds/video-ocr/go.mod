@@ -8,4 +8,7 @@ require (
 	gocv.io/x/gocv v0.39.0
 )
 
-require github.com/davecgh/go-spew v1.1.1 // indirect
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pborman/getopt/v2 v2.1.0
+)

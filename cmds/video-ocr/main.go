@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -14,51 +13,118 @@ import (
 
 	"github.com/omakoto/go-common/src/common"
 	"github.com/otiai10/gosseract/v2"
+	"github.com/pborman/getopt/v2"
 	"gocv.io/x/gocv"
 )
 
 var (
-	sourceFile  = flag.String("f", "/dev/video0", "Input device file")
-	ocrInterval = flag.Int("i", 8, "Min interval for performing OCR")
-	sleep       = flag.Int("s", 1, "Sleep millis between frames")
-	languages   = flag.String("l", "eng", "Comma-separated list of languages")
-	width       = flag.Int("w", 1920, "Width of the video capture")
-	height      = flag.Int("h", 1080, "Height of the video capture")
-	verbose     = flag.Bool("v", false, "Make verbose")
-	fps         = flag.Int("fps", 30, "Capture FPS")
-	ocrScale    = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
-
 	ocrRegions = make([]image.Rectangle, 0)
 )
 
-func init() {
-	flag.Func("r", "Region to OCR in the form of x,y,w,h", func(value string) error {
-		e := fmt.Errorf("Invalid region format: %v", value)
-		parts := strings.Split(value, ",")
-		if len(parts) != 4 {
-			return e
-		}
+type ocrRegionArg struct {
+	x, y, w, h int
+}
+
+var _ getopt.Value = (*ocrRegionArg)(nil)
+
+// Removed invalid type conversion
+func (o *ocrRegionArg) String() string {
+	return fmt.Sprintf("%d,%d,%d,%d", o.x, o.y, o.w, o.h)
+}
+
+func (o *ocrRegionArg) Set(value string, opt getopt.Option) error {
+	parts := strings.Split(value, ",")
+	if len(parts) != 4 {
+		return fmt.Errorf("Invalid region format: %v", value)
+	}
+	atoi := func(s string) (int, error) {
 		x, err := strconv.Atoi(parts[0])
 		if err != nil {
-			return e
+			return 0, fmt.Errorf("Invalid region format: %v: %w", value, err)
 		}
-		y, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return e
-		}
-		w, err := strconv.Atoi(parts[2])
-		if err != nil {
-			return e
-		}
-		h, err := strconv.Atoi(parts[3])
-		if err != nil {
-			return e
-		}
-		ocrRegions = append(ocrRegions, image.Rect(x, y, x+w, y+h))
+		return x, nil
+	}
 
-		return nil
-	})
+	x, err := atoi(parts[0])
+	if err != nil {
+		return err
+	}
+	y, err := atoi(parts[1])
+	if err != nil {
+		return err
+	}
+	w, err := atoi(parts[2])
+	if err != nil {
+		return err
+	}
+	h, err := atoi(parts[3])
+	if err != nil {
+		return err
+	}
+	o.x, o.y, o.w, o.h = x, y, w, h
+
+	// Add to the global list
+	ocrRegions = append(ocrRegions, image.Rect(x, y, x+w, y+h))
+
+	return nil
 }
+
+var (
+	// sourceFile  = flag.String("f", "/dev/video0", "Input device file")
+	// ocrInterval = flag.Int("i", 8, "Min interval for performing OCR")
+	// sleep       = flag.Int("s", 1, "Sleep millis between frames")
+	// languages   = flag.String("l", "eng", "Comma-separated list of languages")
+	// width       = flag.Int("w", 1920, "Width of the video capture")
+	// height      = flag.Int("h", 1080, "Height of the video capture")
+	// verbose     = flag.Bool("v", false, "Make verbose")
+	// fps         = flag.Int("fps", 30, "Capture FPS")
+	// ocrScale    = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
+
+	sourceFile  = getopt.StringLong("source", 's', "/dev/video0", "Input device file")
+	ocrInterval = getopt.IntLong("interval", 'i', 8, "Min interval for performing OCR")
+	sleep       = getopt.IntLong("Wait", 't', 1, "Sleep millis between frames")
+	languages   = getopt.StringLong("lang", 'l', "eng", "Comma-separated list of languages")
+	width       = getopt.IntLong("width", 'w', 1920, "Width of the video capture")
+	height      = getopt.IntLong("height", 'h', 1080, "Height of the video capture")
+	verbose     = getopt.BoolLong("verbose", 'v', "Make verbose")
+	fps         = getopt.IntLong("fps", 'f', 30, "Capture FPS")
+
+	ocrScale float64 = 1
+	_                = getopt.FlagLong(&ocrScale, "ocr-scale", 'q', "Image scale for feeding OCR [0.1 - 1]")
+
+	r = ocrRegionArg{}
+	_ = getopt.FlagLong((*ocrRegionArg)(&r), "region", 'r', "Region to OCR in the form of x,y,w,h")
+	// ocrRegions = make([]image.Rectangle, 0)
+)
+
+// func init() {
+// 	flag.Func("r", "Region to OCR in the form of x,y,w,h", func(value string) error {
+// 		e := fmt.Errorf("Invalid region format: %v", value)
+// 		parts := strings.Split(value, ",")
+// 		if len(parts) != 4 {
+// 			return e
+// 		}
+// 		x, err := strconv.Atoi(parts[0])
+// 		if err != nil {
+// 			return e
+// 		}
+// 		y, err := strconv.Atoi(parts[1])
+// 		if err != nil {
+// 			return e
+// 		}
+// 		w, err := strconv.Atoi(parts[2])
+// 		if err != nil {
+// 			return e
+// 		}
+// 		h, err := strconv.Atoi(parts[3])
+// 		if err != nil {
+// 			return e
+// 		}
+// 		ocrRegions = append(ocrRegions, image.Rect(x, y, x+w, y+h))
+
+// 		return nil
+// 	})
+// }
 
 func toOutput(text string) string {
 	return strings.ReplaceAll(text, "\n", " ")
@@ -73,24 +139,25 @@ func logf(format string, a ...any) {
 }
 
 func parseArgs() {
-	// Define a custom usage function
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", "video-ocr")
-		flag.PrintDefaults()
+	getopt.Parse()
+
+	if *verbose {
+		common.DebugEnabled = true
+		common.VerboseEnabled = true
 	}
 
-	// Parse the flags
-	flag.Parse()
-
 	// Normalize arguments
-	if *ocrScale < 0.1 {
-		*ocrScale = 0.1
-	} else if *ocrScale > 1 {
-		*ocrScale = 1
+	if ocrScale < 0.1 {
+		ocrScale = 0.1
+	} else if ocrScale > 1 {
+		ocrScale = 1
 	}
 
 	if len(ocrRegions) == 0 {
 		ocrRegions = append(ocrRegions, image.Rect(0, 0, *width, *height))
+	}
+	if common.VerboseEnabled {
+		fmt.Printf("# OCR Regions: %v\n", ocrRegions)
 	}
 }
 
@@ -133,8 +200,7 @@ func mustInitCapture(file string, width, height, fps int) *gocv.VideoCapture {
 	return capture
 }
 
-func main() {
-	parseArgs()
+func realMain() int {
 
 	// Open the video source and initialize it
 	webcam := mustInitCapture(*sourceFile, *width, *height, *fps)
@@ -187,7 +253,7 @@ func main() {
 				var rect = gray.Region(ocrRect)
 				defer rect.Close()
 
-				gocv.Resize(rect, &rect, image.Point{}, *ocrScale, *ocrScale, gocv.InterpolationLinear)
+				gocv.Resize(rect, &rect, image.Point{}, ocrScale, ocrScale, gocv.InterpolationLinear)
 
 				// window.IMShow(rect)
 
@@ -249,19 +315,17 @@ func main() {
 			frames = 0
 		}
 
-		if showVideo {
-			// Draw the ORC rectangles on the window
-			for _, ocrRect := range ocrRegions {
-				gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 3)
-			}
+		// Draw the ORC rectangles on the window
+		for _, ocrRect := range ocrRegions {
+			gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 3)
+		}
 
-			window.IMShow(img)
+		window.IMShow(img)
 
-			key := window.WaitKey(1) // Handle events.
+		key := window.WaitKey(1) // Handle events.
 
-			if key == 27 { // ESC
-				break
-			}
+		if key == 27 { // ESC
+			break
 		}
 
 		readFps++
@@ -273,4 +337,37 @@ func main() {
 		}
 
 	}
+	return 0
+}
+func main() {
+	common.RunAndExit(func() int {
+		parseArgs()
+		//args := getopt.Args()
+		// if *help || len(args) == 0 {
+		// 	getopt.Usage()
+		// 	os.Exit(0)
+		// }
+
+		// options := gaze.Options{}
+		// options.Input = os.Stdin
+		// options.Output = os.Stdout
+		// options.ForcedTerminalWidth = *width
+		// options.ForcedTerminalHeight = *height
+		// options.CommandLine = args
+		// options.SetInterval(time.Duration(float64(time.Second) * interval))
+		// options.Precise = *precise
+		// options.NoTitle = *noTitle
+		// options.UseExec = *exec
+
+		// common.Dump("Options: ", options)
+		// common.Debugf("Display command: %s\n", options.GetDisplayCommand())
+		// common.Dump("Exec command: ", options.GetExecCommand())
+
+		// gazer := gaze.NewGazer(options)
+		// defer gazer.Finish()
+
+		// gazer.RunLoop(*times)
+
+		return 0
+	})
 }
