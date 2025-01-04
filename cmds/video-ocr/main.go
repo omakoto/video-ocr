@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -92,6 +91,7 @@ var (
 	height      = getopt.IntLong("height", 'h', 1080, "Height of the video capture")
 	verbose     = getopt.BoolLong("verbose", 'v', "Make verbose")
 	fps         = getopt.IntLong("fps", 'f', 30, "Capture FPS")
+	noStats     = getopt.BoolLong("no-stats", 'n', "Disable stats")
 
 	ocrScale float64 = 1
 	_                = getopt.FlagLong(&ocrScale, "ocr-scale", 'q', "Image scale for feeding OCR [0.1 - 1]")
@@ -99,14 +99,6 @@ var (
 	r = ocrRegionArg{}
 	_ = getopt.FlagLong((*ocrRegionArg)(&r), "region", 'r', "Region to OCR in the form of x,y,w,h")
 )
-
-var logMutex sync.Mutex
-
-func logf(format string, a ...any) {
-	logMutex.Lock()
-	fmt.Fprintf(os.Stdout, format, a...)
-	logMutex.Unlock()
-}
 
 func parseArgs() {
 	getopt.Parse()
@@ -173,10 +165,76 @@ func mustInitOcr() *gosseract.Client {
 	client := gosseract.NewClient()
 
 	langs := strings.Split(*languages, ",")
-	logf("# Languages: %v\n", langs)
+	fmt.Printf("# Languages: %v\n", langs)
 	client.SetLanguage(langs...)
 
 	return client
+}
+
+type UiOptions struct {
+	pauseOcr bool
+	noStats  bool
+}
+
+type WindowManager struct {
+	window *gocv.Window
+
+	uiOptions *UiOptions
+
+	mouseLDownX, mouseLDownY int
+}
+
+func NewWindowManager(window *gocv.Window, uiOptions *UiOptions) *WindowManager {
+	ret := &WindowManager{
+		window:    window,
+		uiOptions: uiOptions,
+	}
+	window.SetMouseHandler(ret.mouseHandler, nil)
+	return ret
+}
+
+func (w *WindowManager) Close() {
+	w.window.Close()
+}
+
+func (w *WindowManager) ShowImage(img gocv.Mat) {
+	w.window.IMShow(img)
+}
+
+func (w *WindowManager) mouseHandler(event int, x int, y int, flags int, data interface{}) {
+	switch event {
+	case CV_EVENT_LBUTTONDOWN:
+		fmt.Printf("# Mouse: Left button down: %d, %d\n", x, y)
+		w.mouseLDownX = x
+		w.mouseLDownY = y
+	case CV_EVENT_LBUTTONUP:
+		fmt.Printf("# Mouse: Left button up: %d, %d\n", x, y)
+		fmt.Printf("# Region: %d,%d,%d,%d\n", w.mouseLDownX, w.mouseLDownY, x-w.mouseLDownX, y-w.mouseLDownY)
+	}
+}
+
+func (w *WindowManager) HandleEvents() bool {
+	key := w.window.WaitKey(1) // Handle events.
+
+	// if common.VerboseEnabled {
+	// 	common.Verbosef("# Key: %v\n", key)
+	// }
+
+	switch key {
+	case 27: // ESC
+		return false
+	case 'p':
+		w.uiOptions.pauseOcr = !w.uiOptions.pauseOcr
+		if w.uiOptions.pauseOcr {
+			fmt.Printf("# OCR paused. Press [p] again to resume.\n")
+		}
+	case 's':
+		w.uiOptions.noStats = !w.uiOptions.noStats
+		if w.uiOptions.noStats {
+			fmt.Printf("# Stats disabled. Press [s] again to enable.\n")
+		}
+	}
+	return true
 }
 
 func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) ([]string, time.Duration) {
@@ -202,7 +260,7 @@ func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) ([]string, time.Dura
 		}
 
 		if common.VerboseEnabled {
-			logf("# Scanning the image...\n")
+			fmt.Printf("# Scanning the image...\n")
 		}
 		client.SetImageFromBytes(imgBytes.GetBytes())
 		text, err := client.Text()
@@ -216,66 +274,10 @@ func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) ([]string, time.Dura
 	return ret, readTime
 }
 
-type WindowManager struct {
-	window *gocv.Window
-
-	mouseLDownX, mouseLDownY int
-
-	pauseOcr bool
-}
-
-func NewWindowManager(window *gocv.Window) *WindowManager {
-	ret := &WindowManager{
-		window: window,
-	}
-	window.SetMouseHandler(ret.mouseHandler, nil)
-	return ret
-}
-
-func (w *WindowManager) Close() {
-	w.window.Close()
-}
-
-func (w *WindowManager) ShowImage(img gocv.Mat) {
-	w.window.IMShow(img)
-}
-
-func (w *WindowManager) mouseHandler(event int, x int, y int, flags int, data interface{}) {
-	switch event {
-	case CV_EVENT_LBUTTONDOWN:
-		logf("# Mouse: Left button down: %d, %d\n", x, y)
-		w.mouseLDownX = x
-		w.mouseLDownY = y
-	case CV_EVENT_LBUTTONUP:
-		logf("# Mouse: Left button up: %d, %d\n", x, y)
-		logf("# Region: %d,%d,%d,%d\n", w.mouseLDownX, w.mouseLDownY, x-w.mouseLDownX, y-w.mouseLDownY)
-	}
-}
-
-func (w *WindowManager) HandleEvents() bool {
-	key := w.window.WaitKey(1) // Handle events.
-
-	// if common.VerboseEnabled {
-	// 	common.Verbosef("# Key: %v\n", key)
-	// }
-
-	switch key {
-	case 27: // ESC
-		return false
-	case 'p':
-		w.pauseOcr = !w.pauseOcr
-		if w.pauseOcr {
-			logf("# OCR paused. Press [p] again to resume.\n")
-		}
-	}
-	return true
-}
-
-func (w *WindowManager) OcrPaused() bool {
-	return w.pauseOcr
-}
-
 func realMain() int {
+
+	uiOptions := UiOptions{}
+	uiOptions.noStats = *noStats
 
 	// Open the video source and initialize it
 	webcam := mustInitCapture(*sourceFile, *width, *height, *fps)
@@ -288,7 +290,7 @@ func realMain() int {
 	defer client.Close()
 
 	// Create a window for display (if enabled)
-	window := NewWindowManager(gocv.NewWindow("Video with OCR"))
+	window := NewWindowManager(gocv.NewWindow("Video with OCR"), &uiOptions)
 	defer window.Close()
 
 	// Prepare image matrix
@@ -300,8 +302,6 @@ func realMain() int {
 
 	frameCounterForOcr := 0
 	frameCounterForFps := 0
-
-	ocrPaused := false
 
 	// If it's 0, it means OCR is ready to process the next frame.
 	// If it's 1, it means OCR is processing a frame.
@@ -332,7 +332,7 @@ func realMain() int {
 
 			for i, text := range texts {
 				if len(text) > 0 {
-					logf("# Text %d: %s\n", i, strings.ReplaceAll(text, "\n", " "))
+					fmt.Printf("# Text %d: %s\n", i, strings.ReplaceAll(text, "\n", " "))
 				}
 			}
 		}
@@ -341,6 +341,9 @@ func realMain() int {
 	lastTick := time.Now()
 	nextTick := lastTick.Add(time.Second)
 
+	fmt.Printf("# Info: [ESC] key to close app\n")
+	fmt.Printf("# Info: [P] key to toggle OCR\n")
+	fmt.Printf("# Info: [S] key to toggle stats\n")
 	common.Verbose("# Started\n")
 
 	// Main loop
@@ -349,7 +352,7 @@ func realMain() int {
 
 		captureStart := time.Now()
 		if ok := webcam.Read(&img); !ok {
-			logf("# ERROR: Unable to read frame.\n")
+			fmt.Printf("# ERROR: Unable to read frame.\n")
 			continue
 		}
 		captureTime := time.Since(captureStart)
@@ -363,7 +366,7 @@ func realMain() int {
 		frameCounterForFps++
 
 		// // Perform OCR every ocrInterval frames
-		if !ocrPaused && frameCounterForOcr >= *ocrInterval && ocrReady.Load() == 0 {
+		if !uiOptions.pauseOcr && frameCounterForOcr >= *ocrInterval && ocrReady.Load() == 0 {
 			ocrReady.Add(1)
 			imageChannel <- img.Clone()
 			frameCounterForOcr = 0
@@ -380,15 +383,14 @@ func realMain() int {
 		if !window.HandleEvents() {
 			break
 		}
-		ocrPaused = window.OcrPaused()
 
 		// Show FPS, etc
 		now := time.Now()
 		if now.Compare(nextTick) >= 0 {
 			tickDuration := now.Sub(lastTick).Seconds()
 			fps := float64(frameCounterForFps) / tickDuration
-			if !ocrPaused {
-				logf("# Stats: FPS: %d    Last capture ms: %d    Last OCR ms: %d\n", int(fps), captureTime.Milliseconds(), readMillis.Load())
+			if !uiOptions.pauseOcr && !uiOptions.noStats {
+				fmt.Printf("# Stats: FPS: %d    Last capture ms: %d    Last OCR ms: %d\n", int(fps), captureTime.Milliseconds(), readMillis.Load())
 			}
 			lastTick = now
 			nextTick = now.Add(time.Second)
@@ -396,7 +398,7 @@ func realMain() int {
 		}
 
 	}
-	logf("# Exiting...\n")
+	fmt.Printf("# Exiting...\n")
 
 	imageChannel <- gocv.NewMat()
 	closing.Store(true)
