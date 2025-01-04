@@ -154,6 +154,16 @@ func mustInitCapture(file string, width, height, fps int) *gocv.VideoCapture {
 	return capture
 }
 
+func mustInitOcr() *gosseract.Client {
+	client := gosseract.NewClient()
+
+	langs := strings.Split(*languages, ",")
+	logf("# Languages: %v\n", langs)
+	client.SetLanguage(langs...)
+
+	return client
+}
+
 func realMain() int {
 
 	// Open the video source and initialize it
@@ -163,12 +173,8 @@ func realMain() int {
 	showVideoCaptureProps(webcam)
 
 	// Initialize Tesseract client
-	client := gosseract.NewClient()
+	client := mustInitOcr()
 	defer client.Close()
-
-	langs := strings.Split(*languages, ",")
-	logf("# Languages: %v\n", langs)
-	client.SetLanguage(langs...)
 
 	// Create a window for display (if enabled)
 	window := gocv.NewWindow("Video with OCR")
@@ -179,10 +185,6 @@ func realMain() int {
 	defer img.Close()
 
 	frames := 0
-
-	if *verbose {
-		logf("# Started\n")
-	}
 
 	var ready atomic.Int32
 
@@ -208,8 +210,6 @@ func realMain() int {
 				defer rect.Close()
 
 				gocv.Resize(rect, &rect, image.Point{}, ocrScale, ocrScale, gocv.InterpolationLinear)
-
-				// window.IMShow(rect)
 
 				// Get image bytes
 				imgBytes, err := gocv.IMEncode(gocv.PNGFileExt, rect)
@@ -242,6 +242,10 @@ func realMain() int {
 
 	nextTick := time.Now().UnixNano() + 1e9
 	readFps := 0
+
+	if *verbose {
+		logf("# Started\n")
+	}
 
 	for {
 		if *verbose {
