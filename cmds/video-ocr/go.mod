@@ -1,4 +1,4 @@
-module video-ocr
+module github.com/omakoto/video-ocr/cmds/video-ocr
 
 go 1.23
 
