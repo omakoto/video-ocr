@@ -20,6 +20,11 @@ video-ocr [-s /dev/videoN]  [-l LANG] [-w WIDTH] [-h HEIGHT] [-r X,Y,W,H] ...
 ## Installation
 
 ```
+go install github.com/omakoto/video-ocr/cmd/...@latest
+```
+
+Or, after `git clone`, run this:
+```
 $ ./00install.bash
 ```
 
