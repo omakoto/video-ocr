@@ -131,26 +131,26 @@ func parseArgs() {
 }
 
 func showVideoCaptureProps(webcam *gocv.VideoCapture) {
-	fmt.Printf("Frame Width: %v\n", webcam.Get(gocv.VideoCaptureFrameWidth))
-	fmt.Printf("Frame Height: %v\n", webcam.Get(gocv.VideoCaptureFrameHeight))
-	fmt.Printf("FPS: %v\n", webcam.Get(gocv.VideoCaptureFPS))
-	fmt.Printf("Buffer Size: %v\n", webcam.Get(gocv.VideoCaptureBufferSize))
-	fmt.Printf("Brightness: %v\n", webcam.Get(gocv.VideoCaptureBrightness))
-	fmt.Printf("Contrast: %v\n", webcam.Get(gocv.VideoCaptureContrast))
-	fmt.Printf("Saturation: %v\n", webcam.Get(gocv.VideoCaptureSaturation))
-	fmt.Printf("Hue: %v\n", webcam.Get(gocv.VideoCaptureHue))
-	fmt.Printf("Gain: %v\n", webcam.Get(gocv.VideoCaptureGain))
-	fmt.Printf("Exposure: %v\n", webcam.Get(gocv.VideoCaptureExposure))
-	fmt.Printf("Auto Exposure: %v\n", webcam.Get(gocv.VideoCaptureAutoExposure))
-	fmt.Printf("Gamma: %v\n", webcam.Get(gocv.VideoCaptureGamma))
-	fmt.Printf("Sharpness: %v\n", webcam.Get(gocv.VideoCaptureSharpness))
-	fmt.Printf("Backlight Compensation: %v\n", webcam.Get(gocv.VideoCaptureBacklight))
-	fmt.Printf("Focus: %v\n", webcam.Get(gocv.VideoCaptureFocus))
-	fmt.Printf("Zoom: %v\n", webcam.Get(gocv.VideoCaptureZoom))
-	fmt.Printf("ISO Speed: %v\n", webcam.Get(gocv.VideoCaptureISOSpeed))
-	fmt.Printf("Temperature: %v\n", webcam.Get(gocv.VideoCaptureTemperature))
-	fmt.Printf("HW Acceleration: %v\n", webcam.Get(gocv.VideoCaptureHWAcceleration))
-	fmt.Printf("HW Device: %v\n", webcam.Get(gocv.VideoCaptureHWDevice))
+	fmt.Printf("# Input: Frame Width: %v\n", webcam.Get(gocv.VideoCaptureFrameWidth))
+	fmt.Printf("# Input: Frame Height: %v\n", webcam.Get(gocv.VideoCaptureFrameHeight))
+	fmt.Printf("# Input: FPS: %v\n", webcam.Get(gocv.VideoCaptureFPS))
+	fmt.Printf("# Input: Buffer Size: %v\n", webcam.Get(gocv.VideoCaptureBufferSize))
+	fmt.Printf("# Input: Brightness: %v\n", webcam.Get(gocv.VideoCaptureBrightness))
+	fmt.Printf("# Input: Contrast: %v\n", webcam.Get(gocv.VideoCaptureContrast))
+	fmt.Printf("# Input: Saturation: %v\n", webcam.Get(gocv.VideoCaptureSaturation))
+	fmt.Printf("# Input: Hue: %v\n", webcam.Get(gocv.VideoCaptureHue))
+	fmt.Printf("# Input: Gain: %v\n", webcam.Get(gocv.VideoCaptureGain))
+	fmt.Printf("# Input: Exposure: %v\n", webcam.Get(gocv.VideoCaptureExposure))
+	fmt.Printf("# Input: Auto Exposure: %v\n", webcam.Get(gocv.VideoCaptureAutoExposure))
+	fmt.Printf("# Input: Gamma: %v\n", webcam.Get(gocv.VideoCaptureGamma))
+	fmt.Printf("# Input: Sharpness: %v\n", webcam.Get(gocv.VideoCaptureSharpness))
+	fmt.Printf("# Input: Backlight Compensation: %v\n", webcam.Get(gocv.VideoCaptureBacklight))
+	fmt.Printf("# Input: Focus: %v\n", webcam.Get(gocv.VideoCaptureFocus))
+	fmt.Printf("# Input: Zoom: %v\n", webcam.Get(gocv.VideoCaptureZoom))
+	fmt.Printf("# Input: ISO Speed: %v\n", webcam.Get(gocv.VideoCaptureISOSpeed))
+	fmt.Printf("# Input: Temperature: %v\n", webcam.Get(gocv.VideoCaptureTemperature))
+	fmt.Printf("# Input: HW Acceleration: %v\n", webcam.Get(gocv.VideoCaptureHWAcceleration))
+	fmt.Printf("# Input: HW Device: %v\n", webcam.Get(gocv.VideoCaptureHWDevice))
 }
 
 func mustInitCapture(file string, width, height, fps int) *gocv.VideoCapture {
@@ -392,7 +392,7 @@ func realMain() int {
 			tickDuration := now.Sub(lastTick).Seconds()
 			fps := float64(frameCounterForFps) / tickDuration
 			if !ocrPaused {
-				logf("# FPS: %d (last capture ms: %d, read ms: %d)\n", int(fps), captureTime.Milliseconds(), readMillis.Load())
+				logf("# Stats: FPS: %d    Last capture ms: %d    Last OCR ms: %d\n", int(fps), captureTime.Milliseconds(), readMillis.Load())
 			}
 			lastTick = now
 			nextTick = now.Add(time.Second)
@@ -402,8 +402,8 @@ func realMain() int {
 	}
 	logf("# Exiting...\n")
 
-	closing.Store(true)
 	imageChannel <- gocv.NewMat()
+	closing.Store(true)
 	wg.Wait()
 	return 0
 }
