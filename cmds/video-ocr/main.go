@@ -70,7 +70,7 @@ func (o *ocrRegionArg) Set(value string, opt getopt.Option) error {
 var (
 	sourceFile  = getopt.StringLong("source", 's', "/dev/video0", "Input device file")
 	ocrInterval = getopt.IntLong("interval", 'i', 8, "Min interval for performing OCR")
-	sleep       = getopt.IntLong("Wait", 't', 1, "Sleep millis between frames")
+	wait        = getopt.IntLong("Wait", 't', 1, "Sleep millis between frames")
 	languages   = getopt.StringLong("lang", 'l', "eng", "Comma-separated list of languages")
 	width       = getopt.IntLong("width", 'w', 1920, "Width of the video capture")
 	height      = getopt.IntLong("height", 'h', 1080, "Height of the video capture")
@@ -110,9 +110,8 @@ func parseArgs() {
 	if len(ocrRegions) == 0 {
 		ocrRegions = append(ocrRegions, image.Rect(0, 0, *width, *height))
 	}
-	if common.VerboseEnabled {
-		fmt.Printf("# OCR Regions: %v\n", ocrRegions)
-	}
+
+	common.Verbosef("# OCR Regions: %v\n", ocrRegions)
 }
 
 func showVideoCaptureProps(webcam *gocv.VideoCapture) {
@@ -139,7 +138,7 @@ func showVideoCaptureProps(webcam *gocv.VideoCapture) {
 }
 
 func mustInitCapture(file string, width, height, fps int) *gocv.VideoCapture {
-	capture, err := gocv.OpenVideoCapture(*sourceFile)
+	capture, err := gocv.OpenVideoCapture(file)
 	common.Check(err, "Error opening video capture device")
 
 	capture.Set(gocv.VideoCaptureFrameWidth, float64(width))
@@ -164,6 +163,74 @@ func mustInitOcr() *gosseract.Client {
 	return client
 }
 
+func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) time.Duration {
+	defer img.Close()
+	readStart := time.Now()
+
+	gray := gocv.NewMat()
+	defer gray.Close()
+	gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
+
+	for i, ocrRect := range ocrRegions {
+		var rect = gray.Region(ocrRect)
+		defer rect.Close()
+
+		gocv.Resize(rect, &rect, image.Point{}, ocrScale, ocrScale, gocv.InterpolationLinear)
+
+		// Get image bytes
+		imgBytes, err := gocv.IMEncode(gocv.PNGFileExt, rect)
+		if err != nil {
+			panic(fmt.Errorf("error: encoding image: %w", err))
+		}
+
+		if common.VerboseEnabled {
+			logf("# Scanning the image...\n")
+		}
+		client.SetImageFromBytes(imgBytes.GetBytes())
+		text, err := client.Text()
+		if err != nil {
+			panic(fmt.Errorf("error: OCR failed: %w", err))
+		}
+
+		if len(text) > 0 {
+			logf("# Text %d: %s\n", i, strings.ReplaceAll(text, "\n", " "))
+		}
+	}
+	readTime := time.Since(readStart)
+	return readTime
+}
+
+type WindowManager struct {
+	window *gocv.Window
+}
+
+func NewWindowManager(window *gocv.Window) *WindowManager {
+	return &WindowManager{
+		window: window,
+	}
+}
+
+func (w *WindowManager) Close() {
+	w.window.Close()
+}
+
+func (w *WindowManager) ShowImage(img gocv.Mat) {
+	w.window.IMShow(img)
+}
+
+func (w *WindowManager) HandleEvents() bool {
+	key := w.window.WaitKey(1) // Handle events.
+
+	// if common.VerboseEnabled {
+	// 	common.Verbosef("# Key: %v\n", key)
+	// }
+
+	if key == 27 { // ESC
+		return false
+	}
+	return true
+}
+
 func realMain() int {
 
 	// Open the video source and initialize it
@@ -177,81 +244,46 @@ func realMain() int {
 	defer client.Close()
 
 	// Create a window for display (if enabled)
-	window := gocv.NewWindow("Video with OCR")
+	window := NewWindowManager(gocv.NewWindow("Video with OCR"))
 	defer window.Close()
 
 	// Prepare image matrix
 	img := gocv.NewMat()
 	defer img.Close()
 
-	frames := 0
+	// Various initialization...
+	frameCounterForOcr := 0
+	frameCounterForFps := 0
 
-	var ready atomic.Int32
-
-	send := make(chan gocv.Mat)
+	// If it's 0, it means OCR is ready to process the next frame.
+	// If it's 1, it means OCR is processing a frame.
+	var ocrReady atomic.Int32
 
 	var readMillis atomic.Int32
 	readMillis.Store(-1)
 
-	reader := func() {
-		if *verbose {
-			logf("# Reader started\n")
+	imageChannel := make(chan gocv.Mat)
+
+	// Start OCR go routine that reads each frame from imageChannel and run OCR on it.
+	go func() {
+		common.Verbose("# Reader started\n")
+		for img := range imageChannel {
+			duration := ocrSingleFrame(client, img)
+			readMillis.Store(int32(duration.Milliseconds()))
+			ocrReady.Add(-1)
 		}
-		for img := range send {
-			defer img.Close()
-			readStart := time.Now()
+	}()
 
-			gray := gocv.NewMat()
-			defer gray.Close()
-			gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
-
-			for i, ocrRect := range ocrRegions {
-				var rect = gray.Region(ocrRect)
-				defer rect.Close()
-
-				gocv.Resize(rect, &rect, image.Point{}, ocrScale, ocrScale, gocv.InterpolationLinear)
-
-				// Get image bytes
-				imgBytes, err := gocv.IMEncode(gocv.PNGFileExt, rect)
-				if err != nil {
-					logf("# Error: encoding image: %v\n", err)
-					return
-				}
-
-				if *verbose {
-					logf("# Scanning the image...\n")
-				}
-				client.SetImageFromBytes(imgBytes.GetBytes())
-				text, err := client.Text()
-				if err != nil {
-					logf("# Error: OCR failed: %v\n", err)
-					return
-				}
-
-				if len(text) > 0 {
-					logf("# Text %d: %s\n", i, strings.ReplaceAll(text, "\n", " "))
-				}
-			}
-			readTime := time.Since(readStart)
-			readMillis.Store(int32(readTime.Milliseconds()))
-			ready.Add(-1)
-		}
-	}
-
-	go reader()
-
-	nextTick := time.Now().UnixNano() + 1e9
-	readFps := 0
+	lastTick := time.Now()
+	nextTick := lastTick.Add(time.Second)
 
 	if *verbose {
 		logf("# Started\n")
 	}
 
+	// Main loop
 	for {
-		if *verbose {
-			logf(".")
-		}
-		time.Sleep(time.Duration(*sleep) * time.Millisecond)
+		time.Sleep(time.Duration(*wait) * time.Millisecond)
 
 		captureStart := time.Now()
 		if ok := webcam.Read(&img); !ok {
@@ -259,39 +291,45 @@ func realMain() int {
 			continue
 		}
 		captureTime := time.Since(captureStart)
+		if *verbose {
+			logf(".")
+		}
 
 		if img.Empty() {
 			continue
 		}
 
-		frames++
+		frameCounterForOcr++
+		frameCounterForFps++
 
 		// // Perform OCR every ocrInterval frames
-		if frames >= *ocrInterval && ready.Load() == 0 {
-			send <- img.Clone()
-			ready.Add(1)
-			frames = 0
+		if frameCounterForOcr >= *ocrInterval && ocrReady.Load() == 0 {
+			ocrReady.Add(1)
+			imageChannel <- img.Clone()
+			frameCounterForOcr = 0
 		}
 
-		// Draw the ORC rectangles on the window
+		// Draw the ORC rectangles on the image to show on the window.
 		for _, ocrRect := range ocrRegions {
 			gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 3)
 		}
 
-		window.IMShow(img)
+		// Update the window, and handle events.
+		window.ShowImage(img)
 
-		key := window.WaitKey(1) // Handle events.
-
-		if key == 27 { // ESC
+		if !window.HandleEvents() {
 			break
 		}
 
-		readFps++
-		now := time.Now().UnixNano()
-		if now >= nextTick {
-			logf("# FPS: %d (last capture ms: %d, read ms: %d)\n", readFps, captureTime.Milliseconds(), readMillis.Load())
-			nextTick = now + 1e9
-			readFps = 0
+		// Show FPS, etc
+		now := time.Now()
+		if now.Compare(nextTick) >= 0 {
+			tickDuration := now.Sub(lastTick).Seconds()
+			fps := float64(frameCounterForFps) / tickDuration
+			logf("# FPS: %d (last capture ms: %d, read ms: %d)\n", int(fps), captureTime.Milliseconds(), readMillis.Load())
+			lastTick = now
+			nextTick = now.Add(time.Second)
+			frameCounterForFps = 0
 		}
 
 	}
