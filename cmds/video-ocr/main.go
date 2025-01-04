@@ -21,6 +21,22 @@ var (
 	ocrRegions = make([]image.Rectangle, 0)
 )
 
+const (
+	// From https://docs.opencv.org/4.x/d4/dd5/highgui_8hpp.html
+	CV_EVENT_MOUSEMOVE     = 0
+	CV_EVENT_LBUTTONDOWN   = 1
+	CV_EVENT_RBUTTONDOWN   = 2
+	CV_EVENT_MBUTTONDOWN   = 3
+	CV_EVENT_LBUTTONUP     = 4
+	CV_EVENT_RBUTTONUP     = 5
+	CV_EVENT_MBUTTONUP     = 6
+	CV_EVENT_LBUTTONDBLCLK = 7
+	CV_EVENT_RBUTTONDBLCLK = 8
+	CV_EVENT_MBUTTONDBLCLK = 9
+	CV_EVENT_MOUSEWHEEL    = 10
+	CV_EVENT_MOUSEHWHEEL   = 11
+)
+
 type ocrRegionArg struct {
 }
 
@@ -202,12 +218,16 @@ func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) time.Duration {
 
 type WindowManager struct {
 	window *gocv.Window
+
+	mouseLDownX, mouseLDownY int
 }
 
 func NewWindowManager(window *gocv.Window) *WindowManager {
-	return &WindowManager{
+	ret := &WindowManager{
 		window: window,
 	}
+	window.SetMouseHandler(ret.mouseHandler, nil)
+	return ret
 }
 
 func (w *WindowManager) Close() {
@@ -216,6 +236,18 @@ func (w *WindowManager) Close() {
 
 func (w *WindowManager) ShowImage(img gocv.Mat) {
 	w.window.IMShow(img)
+}
+
+func (w *WindowManager) mouseHandler(event int, x int, y int, flags int, data interface{}) {
+	switch event {
+	case CV_EVENT_LBUTTONDOWN:
+		logf("# Mouse: Left button down: %d, %d\n", x, y)
+		w.mouseLDownX = x
+		w.mouseLDownY = y
+	case CV_EVENT_LBUTTONUP:
+		logf("# Mouse: Left button up: %d, %d\n", x, y)
+		logf("# Region: %d,%d,%d,%d\n", w.mouseLDownX, w.mouseLDownY, x-w.mouseLDownX, y-w.mouseLDownY)
+	}
 }
 
 func (w *WindowManager) HandleEvents() bool {

@@ -9,8 +9,9 @@ Using OpenCV, open the first capture device and run OCR on the input.
 
 Example:
 ```
-video-ocr [-f /dev/videoN]  [-l LANG] [-w WIDTH] [-h HEIGHT] [-r X,Y,W,H] ...
+video-ocr [-s /dev/videoN]  [-l LANG] [-w WIDTH] [-h HEIGHT] [-r X,Y,W,H] ...
 
+  -s FILE:    Capture source device
   -l LANG:    OCR language (eng, jpn, etc)
   -r X,Y,W,H: Specify rectangle to apply OCR. Multiple rectangles can be specified.
   
