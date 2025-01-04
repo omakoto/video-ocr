@@ -182,6 +182,7 @@ type WindowManager struct {
 	uiOptions *UiOptions
 
 	mouseLDownX, mouseLDownY int
+	mouseDownOrigUiOptions   UiOptions
 }
 
 func NewWindowManager(window *gocv.Window, uiOptions *UiOptions) *WindowManager {
@@ -207,9 +208,13 @@ func (w *WindowManager) mouseHandler(event int, x int, y int, flags int, data in
 		fmt.Printf("# Mouse: Left button down: %d, %d\n", x, y)
 		w.mouseLDownX = x
 		w.mouseLDownY = y
+		w.mouseDownOrigUiOptions = *w.uiOptions
+		w.uiOptions.pauseOcr = true
+		w.uiOptions.noStats = true
 	case CV_EVENT_LBUTTONUP:
 		fmt.Printf("# Mouse: Left button up: %d, %d\n", x, y)
 		fmt.Printf("# Region: %d,%d,%d,%d\n", w.mouseLDownX, w.mouseLDownY, x-w.mouseLDownX, y-w.mouseLDownY)
+		*w.uiOptions = w.mouseDownOrigUiOptions
 	}
 }
 
