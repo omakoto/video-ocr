@@ -341,9 +341,7 @@ func realMain() int {
 	lastTick := time.Now()
 	nextTick := lastTick.Add(time.Second)
 
-	if *verbose {
-		logf("# Started\n")
-	}
+	common.Verbose("# Started\n")
 
 	// Main loop
 	for {
@@ -355,9 +353,7 @@ func realMain() int {
 			continue
 		}
 		captureTime := time.Since(captureStart)
-		if *verbose {
-			logf(".")
-		}
+		common.Verbose(".")
 
 		if img.Empty() {
 			continue
