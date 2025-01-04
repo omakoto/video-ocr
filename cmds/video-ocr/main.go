@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
 	"os"
 	"strings"
 	"sync"
@@ -14,15 +15,15 @@ import (
 )
 
 var (
-	sourceIndex = flag.Int("d", 0, "Index of capture device to use")
-	sourceFile  = flag.String("input", "", "Input device file")
-	ocrInterval = flag.Int("i", 8, "Interval for performing OCR")
+	sourceFile  = flag.String("f", "/dev/video0", "Input device file")
+	ocrInterval = flag.Int("i", 8, "Min interval for performing OCR")
 	sleep       = flag.Int("s", 1, "Sleep millis between frames")
 	languages   = flag.String("l", "eng", "Comma-separated list of languages")
 	width       = flag.Int("w", 1920, "Width of the video capture")
 	height      = flag.Int("h", 1080, "Height of the video capture")
 	verbose     = flag.Bool("v", false, "Make verbose")
 	fps         = flag.Int("fps", 30, "Capture FPS")
+	ocrScale    = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
 )
 
 func toOutput(text string) string {
@@ -50,18 +51,15 @@ func main() {
 	// Configuration
 	showVideo := true // Display video window
 
-	// There's currently no way to list devices with OpenCV.
-	// https://github.com/opencv/opencv/issues/4269
-
-	// Open the video source
-	var source any
-	if *sourceFile != "" {
-		source = *sourceFile
-	} else {
-		source = *sourceIndex
+	// Normalize arguments
+	if *ocrScale < 0.1 {
+		*ocrScale = 0.1
+	} else if *ocrScale > 1 {
+		*ocrScale = 1
 	}
 
-	webcam, err := gocv.OpenVideoCapture(source)
+	// Open the video source
+	webcam, err := gocv.OpenVideoCapture(*sourceFile)
 	if err != nil {
 		logf("Error opening video capture device: %v\n", err)
 		return
@@ -140,6 +138,11 @@ func main() {
 			gray := gocv.NewMat()
 			defer gray.Close()
 			gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
+
+			gocv.Resize(gray, &gray, image.Point{}, *ocrScale, *ocrScale, gocv.InterpolationLinear)
+
+			// // Shrink the image to 50% of the original size
+			// gocv.Resize(gray, &gray, image.Point{}, 0.5, 0.5, gocv.InterpolationLinear)
 
 			// Get image bytes
 			imgBytes, err := gocv.IMEncode(gocv.PNGFileExt, gray) // Or use 'thresh' if you did preprocessing
