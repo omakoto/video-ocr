@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/omakoto/go-common/src/common"
 	"github.com/otiai10/gosseract/v2"
 	"gocv.io/x/gocv"
 )
@@ -26,29 +27,11 @@ var (
 	verbose     = flag.Bool("v", false, "Make verbose")
 	fps         = flag.Int("fps", 30, "Capture FPS")
 	ocrScale    = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
+
+	ocrRegions = make([]image.Rectangle, 0)
 )
 
-func toOutput(text string) string {
-	return strings.ReplaceAll(text, "\n", " ")
-}
-
-var logMutex sync.Mutex
-
-func logf(format string, a ...any) {
-	logMutex.Lock()
-	fmt.Fprintf(os.Stdout, format, a...)
-	logMutex.Unlock()
-}
-
-func main() {
-	// Define a custom usage function
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", "video-ocr")
-		flag.PrintDefaults()
-	}
-
-	ocrRegions := make([]image.Rectangle, 0)
-
+func init() {
 	flag.Func("r", "Region to OCR in the form of x,y,w,h", func(value string) error {
 		e := fmt.Errorf("Invalid region format: %v", value)
 		parts := strings.Split(value, ",")
@@ -75,12 +58,29 @@ func main() {
 
 		return nil
 	})
+}
+
+func toOutput(text string) string {
+	return strings.ReplaceAll(text, "\n", " ")
+}
+
+var logMutex sync.Mutex
+
+func logf(format string, a ...any) {
+	logMutex.Lock()
+	fmt.Fprintf(os.Stdout, format, a...)
+	logMutex.Unlock()
+}
+
+func parseArgs() {
+	// Define a custom usage function
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", "video-ocr")
+		flag.PrintDefaults()
+	}
 
 	// Parse the flags
 	flag.Parse()
-
-	// Configuration
-	showVideo := true // Display video window
 
 	// Normalize arguments
 	if *ocrScale < 0.1 {
@@ -92,25 +92,9 @@ func main() {
 	if len(ocrRegions) == 0 {
 		ocrRegions = append(ocrRegions, image.Rect(0, 0, *width, *height))
 	}
+}
 
-	// Open the video source
-	webcam, err := gocv.OpenVideoCapture(*sourceFile)
-	if err != nil {
-		logf("Error opening video capture device: %v\n", err)
-		return
-	}
-	defer webcam.Close()
-
-	webcam.Set(gocv.VideoCaptureFrameWidth, float64(*width))
-	webcam.Set(gocv.VideoCaptureFrameHeight, float64(*height))
-	for f := *fps; f > 0; f-- {
-		// fmt.Printf("Trying FPS: %v\n", f)
-		webcam.Set(gocv.VideoCaptureFPS, float64(f))
-		if int(webcam.Get(gocv.VideoCaptureFPS)) == f {
-			break
-		}
-	}
-
+func showVideoCaptureProps(webcam *gocv.VideoCapture) {
 	fmt.Printf("Frame Width: %v\n", webcam.Get(gocv.VideoCaptureFrameWidth))
 	fmt.Printf("Frame Height: %v\n", webcam.Get(gocv.VideoCaptureFrameHeight))
 	fmt.Printf("FPS: %v\n", webcam.Get(gocv.VideoCaptureFPS))
@@ -131,20 +115,44 @@ func main() {
 	fmt.Printf("Temperature: %v\n", webcam.Get(gocv.VideoCaptureTemperature))
 	fmt.Printf("HW Acceleration: %v\n", webcam.Get(gocv.VideoCaptureHWAcceleration))
 	fmt.Printf("HW Device: %v\n", webcam.Get(gocv.VideoCaptureHWDevice))
+}
+
+func mustInitCapture(file string, width, height, fps int) *gocv.VideoCapture {
+	capture, err := gocv.OpenVideoCapture(*sourceFile)
+	common.Check(err, "Error opening video capture device")
+
+	capture.Set(gocv.VideoCaptureFrameWidth, float64(width))
+	capture.Set(gocv.VideoCaptureFrameHeight, float64(height))
+	for f := fps; f > 0; f-- {
+		// fmt.Printf("Trying FPS: %v\n", f)
+		capture.Set(gocv.VideoCaptureFPS, float64(f))
+		if int(capture.Get(gocv.VideoCaptureFPS)) == f {
+			break
+		}
+	}
+	return capture
+}
+
+func main() {
+	parseArgs()
+
+	// Open the video source and initialize it
+	webcam := mustInitCapture(*sourceFile, *width, *height, *fps)
+
+	defer webcam.Close()
+	showVideoCaptureProps(webcam)
 
 	// Initialize Tesseract client
 	client := gosseract.NewClient()
 	defer client.Close()
+
 	langs := strings.Split(*languages, ",")
 	logf("# Languages: %v\n", langs)
 	client.SetLanguage(langs...)
 
 	// Create a window for display (if enabled)
-	var window *gocv.Window
-	if showVideo {
-		window = gocv.NewWindow("Video with OCR")
-		defer window.Close()
-	}
+	window := gocv.NewWindow("Video with OCR")
+	defer window.Close()
 
 	// Prepare image matrix
 	img := gocv.NewMat()
@@ -175,7 +183,7 @@ func main() {
 			defer gray.Close()
 			gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
 
-			for _, ocrRect := range ocrRegions {
+			for i, ocrRect := range ocrRegions {
 				var rect = gray.Region(ocrRect)
 				defer rect.Close()
 
@@ -201,7 +209,7 @@ func main() {
 				}
 
 				if len(text) > 0 {
-					logf("# Text: %s\n", toOutput(text))
+					logf("# Text %d: %s\n", i, toOutput(text))
 				}
 			}
 			readTime := time.Now().Sub(readStart)
@@ -249,7 +257,11 @@ func main() {
 
 			window.IMShow(img)
 
-			window.WaitKey(1) // Handle events.
+			key := window.WaitKey(1) // Handle events.
+
+			if key == 27 { // ESC
+				break
+			}
 		}
 
 		readFps++
