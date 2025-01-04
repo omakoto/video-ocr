@@ -9,9 +9,12 @@ Using OpenCV, open the first capture device and run OCR on the input.
 
 Example:
 ```
-video-ocr -input /dev/videoN  [-l LANG] [-w WIDTH] [-h HEIGHT]
+video-ocr [-f /dev/videoN]  [-l LANG] [-w WIDTH] [-h HEIGHT] [-r X,Y,W,H] ...
 
-  LANG: Language for Tesseract (eng, jpn, etc)
+  -l LANG:    OCR language (eng, jpn, etc)
+  -r X,Y,W,H: Specify rectangle to apply OCR. Multiple rectangles can be specified.
+  
+  See the source code for the other options.
 ```
 ## Installation
 

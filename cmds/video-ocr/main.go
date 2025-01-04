@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,20 +17,15 @@ import (
 )
 
 var (
-	sourceFile   = flag.String("f", "/dev/video0", "Input device file")
-	ocrInterval  = flag.Int("i", 8, "Min interval for performing OCR")
-	sleep        = flag.Int("s", 1, "Sleep millis between frames")
-	languages    = flag.String("l", "eng", "Comma-separated list of languages")
-	width        = flag.Int("w", 1920, "Width of the video capture")
-	height       = flag.Int("h", 1080, "Height of the video capture")
-	verbose      = flag.Bool("v", false, "Make verbose")
-	fps          = flag.Int("fps", 30, "Capture FPS")
-	ocrScale     = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
-	topMargin    = flag.Int("top-margin", 0, "Margin for feeding OCR")
-	bottomMargin = flag.Int("bottom-margin", 0, "Margin for feeding OCR")
-	leftMargin   = flag.Int("left-margin", 0, "Margin for feeding OCR")
-	rightMargin  = flag.Int("right-margin", 0, "Margin for feeding OCR")
-	margin       = flag.Int("margin", 0, "Margin for feeding OCR")
+	sourceFile  = flag.String("f", "/dev/video0", "Input device file")
+	ocrInterval = flag.Int("i", 8, "Min interval for performing OCR")
+	sleep       = flag.Int("s", 1, "Sleep millis between frames")
+	languages   = flag.String("l", "eng", "Comma-separated list of languages")
+	width       = flag.Int("w", 1920, "Width of the video capture")
+	height      = flag.Int("h", 1080, "Height of the video capture")
+	verbose     = flag.Bool("v", false, "Make verbose")
+	fps         = flag.Int("fps", 30, "Capture FPS")
+	ocrScale    = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
 )
 
 func toOutput(text string) string {
@@ -51,6 +47,35 @@ func main() {
 		flag.PrintDefaults()
 	}
 
+	ocrRegions := make([]image.Rectangle, 0)
+
+	flag.Func("r", "Region to OCR in the form of x,y,w,h", func(value string) error {
+		e := fmt.Errorf("Invalid region format: %v", value)
+		parts := strings.Split(value, ",")
+		if len(parts) != 4 {
+			return e
+		}
+		x, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return e
+		}
+		y, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return e
+		}
+		w, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return e
+		}
+		h, err := strconv.Atoi(parts[3])
+		if err != nil {
+			return e
+		}
+		ocrRegions = append(ocrRegions, image.Rect(x, y, x+w, y+h))
+
+		return nil
+	})
+
 	// Parse the flags
 	flag.Parse()
 
@@ -64,19 +89,8 @@ func main() {
 		*ocrScale = 1
 	}
 
-	if *margin > 0 {
-		if *topMargin == 0 {
-			*topMargin = *margin
-		}
-		if *bottomMargin == 0 {
-			*bottomMargin = *margin
-		}
-		if *leftMargin == 0 {
-			*leftMargin = *margin
-		}
-		if *rightMargin == 0 {
-			*rightMargin = *margin
-		}
+	if len(ocrRegions) == 0 {
+		ocrRegions = append(ocrRegions, image.Rect(0, 0, *width, *height))
 	}
 
 	// Open the video source
@@ -149,46 +163,49 @@ func main() {
 	var readMillis atomic.Int32
 	readMillis.Store(-1)
 
-	ocrRect := image.Rect(*leftMargin, *topMargin, *width-*rightMargin, *height-*bottomMargin)
-
 	reader := func() {
 		if *verbose {
 			logf("# Reader started\n")
 		}
 		for img := range send {
+			defer img.Close()
 			readStart := time.Now()
 
 			gray := gocv.NewMat()
 			defer gray.Close()
 			gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
 
-			rect := image.Rect(*leftMargin, *topMargin, *width-*rightMargin, *height-*bottomMargin)
-			gray = gray.Region(rect)
-			gocv.Resize(gray, &gray, image.Point{}, *ocrScale, *ocrScale, gocv.InterpolationLinear)
+			for _, ocrRect := range ocrRegions {
+				var rect = gray.Region(ocrRect)
+				defer rect.Close()
 
-			// Get image bytes
-			imgBytes, err := gocv.IMEncode(gocv.PNGFileExt, gray) // Or use 'thresh' if you did preprocessing
-			if err != nil {
-				logf("# Error: encoding image: %v\n", err)
-				return
-			}
+				gocv.Resize(rect, &rect, image.Point{}, *ocrScale, *ocrScale, gocv.InterpolationLinear)
 
-			if *verbose {
-				logf("# Scanning the image...\n")
-			}
-			client.SetImageFromBytes(imgBytes.GetBytes())
-			text, err := client.Text()
-			if err != nil {
-				logf("# Error: OCR failed: %v\n", err)
-				return
-			}
+				// window.IMShow(rect)
 
+				// Get image bytes
+				imgBytes, err := gocv.IMEncode(gocv.PNGFileExt, rect)
+				if err != nil {
+					logf("# Error: encoding image: %v\n", err)
+					return
+				}
+
+				if *verbose {
+					logf("# Scanning the image...\n")
+				}
+				client.SetImageFromBytes(imgBytes.GetBytes())
+				text, err := client.Text()
+				if err != nil {
+					logf("# Error: OCR failed: %v\n", err)
+					return
+				}
+
+				if len(text) > 0 {
+					logf("# Text: %s\n", toOutput(text))
+				}
+			}
 			readTime := time.Now().Sub(readStart)
 			readMillis.Store(int32(readTime.Milliseconds()))
-
-			if len(text) > 0 {
-				logf("# Text: %s\n", toOutput(text))
-			}
 			ready.Add(-1)
 		}
 	}
@@ -219,15 +236,16 @@ func main() {
 
 		// // Perform OCR every ocrInterval frames
 		if frames >= *ocrInterval && ready.Load() == 0 {
-			send <- img
+			send <- img.Clone()
 			ready.Add(1)
 			frames = 0
 		}
 
 		if showVideo {
-			// Draw a rectangle on the window
-			// rect := image.Rect(*leftMargin, *topMargin, *width-*rightMargin, *height-*bottomMargin)
-			gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 3)
+			// Draw the ORC rectangles on the window
+			for _, ocrRect := range ocrRegions {
+				gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 3)
+			}
 
 			window.IMShow(img)
 
