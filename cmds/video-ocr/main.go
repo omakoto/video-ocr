@@ -22,25 +22,24 @@ var (
 )
 
 type ocrRegionArg struct {
-	x, y, w, h int
 }
 
 var _ getopt.Value = (*ocrRegionArg)(nil)
 
 // Removed invalid type conversion
 func (o *ocrRegionArg) String() string {
-	return fmt.Sprintf("%d,%d,%d,%d", o.x, o.y, o.w, o.h)
+	return fmt.Sprintf("%v", ocrRegions)
 }
 
 func (o *ocrRegionArg) Set(value string, opt getopt.Option) error {
 	parts := strings.Split(value, ",")
 	if len(parts) != 4 {
-		return fmt.Errorf("Invalid region format: %v", value)
+		return fmt.Errorf("invalid region format: %v", value)
 	}
 	atoi := func(s string) (int, error) {
-		x, err := strconv.Atoi(parts[0])
+		x, err := strconv.Atoi(s)
 		if err != nil {
-			return 0, fmt.Errorf("Invalid region format: %v: %w", value, err)
+			return 0, fmt.Errorf("invalid region format: %v: %w", value, err)
 		}
 		return x, nil
 	}
@@ -61,7 +60,6 @@ func (o *ocrRegionArg) Set(value string, opt getopt.Option) error {
 	if err != nil {
 		return err
 	}
-	o.x, o.y, o.w, o.h = x, y, w, h
 
 	// Add to the global list
 	ocrRegions = append(ocrRegions, image.Rect(x, y, x+w, y+h))
@@ -70,16 +68,6 @@ func (o *ocrRegionArg) Set(value string, opt getopt.Option) error {
 }
 
 var (
-	// sourceFile  = flag.String("f", "/dev/video0", "Input device file")
-	// ocrInterval = flag.Int("i", 8, "Min interval for performing OCR")
-	// sleep       = flag.Int("s", 1, "Sleep millis between frames")
-	// languages   = flag.String("l", "eng", "Comma-separated list of languages")
-	// width       = flag.Int("w", 1920, "Width of the video capture")
-	// height      = flag.Int("h", 1080, "Height of the video capture")
-	// verbose     = flag.Bool("v", false, "Make verbose")
-	// fps         = flag.Int("fps", 30, "Capture FPS")
-	// ocrScale    = flag.Float64("q", 1, "Image scale for feeding OCR [0.1-1]")
-
 	sourceFile  = getopt.StringLong("source", 's', "/dev/video0", "Input device file")
 	ocrInterval = getopt.IntLong("interval", 'i', 8, "Min interval for performing OCR")
 	sleep       = getopt.IntLong("Wait", 't', 1, "Sleep millis between frames")
@@ -94,41 +82,7 @@ var (
 
 	r = ocrRegionArg{}
 	_ = getopt.FlagLong((*ocrRegionArg)(&r), "region", 'r', "Region to OCR in the form of x,y,w,h")
-	// ocrRegions = make([]image.Rectangle, 0)
 )
-
-// func init() {
-// 	flag.Func("r", "Region to OCR in the form of x,y,w,h", func(value string) error {
-// 		e := fmt.Errorf("Invalid region format: %v", value)
-// 		parts := strings.Split(value, ",")
-// 		if len(parts) != 4 {
-// 			return e
-// 		}
-// 		x, err := strconv.Atoi(parts[0])
-// 		if err != nil {
-// 			return e
-// 		}
-// 		y, err := strconv.Atoi(parts[1])
-// 		if err != nil {
-// 			return e
-// 		}
-// 		w, err := strconv.Atoi(parts[2])
-// 		if err != nil {
-// 			return e
-// 		}
-// 		h, err := strconv.Atoi(parts[3])
-// 		if err != nil {
-// 			return e
-// 		}
-// 		ocrRegions = append(ocrRegions, image.Rect(x, y, x+w, y+h))
-
-// 		return nil
-// 	})
-// }
-
-func toOutput(text string) string {
-	return strings.ReplaceAll(text, "\n", " ")
-}
 
 var logMutex sync.Mutex
 
@@ -275,10 +229,10 @@ func realMain() int {
 				}
 
 				if len(text) > 0 {
-					logf("# Text %d: %s\n", i, toOutput(text))
+					logf("# Text %d: %s\n", i, strings.ReplaceAll(text, "\n", " "))
 				}
 			}
-			readTime := time.Now().Sub(readStart)
+			readTime := time.Since(readStart)
 			readMillis.Store(int32(readTime.Milliseconds()))
 			ready.Add(-1)
 		}
@@ -300,7 +254,7 @@ func realMain() int {
 			logf("# ERROR: Unable to read frame.\n")
 			continue
 		}
-		captureTime := time.Now().Sub(captureStart)
+		captureTime := time.Since(captureStart)
 
 		if img.Empty() {
 			continue
@@ -342,31 +296,8 @@ func realMain() int {
 func main() {
 	common.RunAndExit(func() int {
 		parseArgs()
-		//args := getopt.Args()
-		// if *help || len(args) == 0 {
-		// 	getopt.Usage()
-		// 	os.Exit(0)
-		// }
 
-		// options := gaze.Options{}
-		// options.Input = os.Stdin
-		// options.Output = os.Stdout
-		// options.ForcedTerminalWidth = *width
-		// options.ForcedTerminalHeight = *height
-		// options.CommandLine = args
-		// options.SetInterval(time.Duration(float64(time.Second) * interval))
-		// options.Precise = *precise
-		// options.NoTitle = *noTitle
-		// options.UseExec = *exec
-
-		// common.Dump("Options: ", options)
-		// common.Debugf("Display command: %s\n", options.GetDisplayCommand())
-		// common.Dump("Exec command: ", options.GetExecCommand())
-
-		// gazer := gaze.NewGazer(options)
-		// defer gazer.Finish()
-
-		// gazer.RunLoop(*times)
+		realMain()
 
 		return 0
 	})
