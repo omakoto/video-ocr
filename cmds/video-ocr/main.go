@@ -179,7 +179,7 @@ func mustInitOcr() *gosseract.Client {
 	return client
 }
 
-func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) time.Duration {
+func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) ([]string, time.Duration) {
 	defer img.Close()
 	readStart := time.Now()
 
@@ -187,7 +187,9 @@ func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) time.Duration {
 	defer gray.Close()
 	gocv.CvtColor(img, &gray, gocv.ColorBGRToGray)
 
-	for i, ocrRect := range ocrRegions {
+	ret := make([]string, 0)
+
+	for _, ocrRect := range ocrRegions {
 		var rect = gray.Region(ocrRect)
 		defer rect.Close()
 
@@ -208,18 +210,18 @@ func ocrSingleFrame(client *gosseract.Client, img gocv.Mat) time.Duration {
 			panic(fmt.Errorf("error: OCR failed: %w", err))
 		}
 
-		if len(text) > 0 {
-			logf("# Text %d: %s\n", i, strings.ReplaceAll(text, "\n", " "))
-		}
+		ret = append(ret, text)
 	}
 	readTime := time.Since(readStart)
-	return readTime
+	return ret, readTime
 }
 
 type WindowManager struct {
 	window *gocv.Window
 
 	mouseLDownX, mouseLDownY int
+
+	pauseOcr bool
 }
 
 func NewWindowManager(window *gocv.Window) *WindowManager {
@@ -257,10 +259,20 @@ func (w *WindowManager) HandleEvents() bool {
 	// 	common.Verbosef("# Key: %v\n", key)
 	// }
 
-	if key == 27 { // ESC
+	switch key {
+	case 27: // ESC
 		return false
+	case 'p':
+		w.pauseOcr = !w.pauseOcr
+		if w.pauseOcr {
+			logf("# OCR paused. Press [p] again to resume.\n")
+		}
 	}
 	return true
+}
+
+func (w *WindowManager) OcrPaused() bool {
+	return w.pauseOcr
 }
 
 func realMain() int {
@@ -284,8 +296,12 @@ func realMain() int {
 	defer img.Close()
 
 	// Various initialization...
+	closing := atomic.Bool{}
+
 	frameCounterForOcr := 0
 	frameCounterForFps := 0
+
+	ocrPaused := false
 
 	// If it's 0, it means OCR is ready to process the next frame.
 	// If it's 1, it means OCR is processing a frame.
@@ -297,12 +313,28 @@ func realMain() int {
 	imageChannel := make(chan gocv.Mat)
 
 	// Start OCR go routine that reads each frame from imageChannel and run OCR on it.
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+
 		common.Verbose("# Reader started\n")
 		for img := range imageChannel {
-			duration := ocrSingleFrame(client, img)
+			if img.Empty() {
+				return
+			}
+			texts, duration := ocrSingleFrame(client, img)
+			if closing.Load() {
+				return
+			}
 			readMillis.Store(int32(duration.Milliseconds()))
 			ocrReady.Add(-1)
+
+			for i, text := range texts {
+				if len(text) > 0 {
+					logf("# Text %d: %s\n", i, strings.ReplaceAll(text, "\n", " "))
+				}
+			}
 		}
 	}()
 
@@ -335,7 +367,7 @@ func realMain() int {
 		frameCounterForFps++
 
 		// // Perform OCR every ocrInterval frames
-		if frameCounterForOcr >= *ocrInterval && ocrReady.Load() == 0 {
+		if !ocrPaused && frameCounterForOcr >= *ocrInterval && ocrReady.Load() == 0 {
 			ocrReady.Add(1)
 			imageChannel <- img.Clone()
 			frameCounterForOcr = 0
@@ -343,7 +375,7 @@ func realMain() int {
 
 		// Draw the ORC rectangles on the image to show on the window.
 		for _, ocrRect := range ocrRegions {
-			gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 3)
+			gocv.Rectangle(&img, ocrRect, color.RGBA{0, 255, 0, 0}, 1)
 		}
 
 		// Update the window, and handle events.
@@ -352,19 +384,27 @@ func realMain() int {
 		if !window.HandleEvents() {
 			break
 		}
+		ocrPaused = window.OcrPaused()
 
 		// Show FPS, etc
 		now := time.Now()
 		if now.Compare(nextTick) >= 0 {
 			tickDuration := now.Sub(lastTick).Seconds()
 			fps := float64(frameCounterForFps) / tickDuration
-			logf("# FPS: %d (last capture ms: %d, read ms: %d)\n", int(fps), captureTime.Milliseconds(), readMillis.Load())
+			if !ocrPaused {
+				logf("# FPS: %d (last capture ms: %d, read ms: %d)\n", int(fps), captureTime.Milliseconds(), readMillis.Load())
+			}
 			lastTick = now
 			nextTick = now.Add(time.Second)
 			frameCounterForFps = 0
 		}
 
 	}
+	logf("# Exiting...\n")
+
+	closing.Store(true)
+	imageChannel <- gocv.NewMat()
+	wg.Wait()
 	return 0
 }
 func main() {
