@@ -87,8 +87,9 @@ var (
 	ocrInterval = getopt.IntLong("interval", 'i', 8, "Run OCR once every N frames")
 	wait        = getopt.IntLong("Wait", 't', 1, "Milliseconds to sleep between frame captures")
 	languages   = getopt.StringLong("lang", 'l', "eng", "OCR language(s), comma-separated (e.g. eng, jpn, eng+jpn)")
-	width       = getopt.IntLong("width", 'w', 1920, "Capture width in pixels")
-	height      = getopt.IntLong("height", 'h', 1080, "Capture height in pixels")
+	width       = getopt.IntLong("width", 'W', 1920, "Capture width in pixels")
+	height      = getopt.IntLong("height", 'H', 1080, "Capture height in pixels")
+	help        = getopt.BoolLong("help", 'h', "Show this help and exit")
 	verbose     = getopt.BoolLong("verbose", 'v', "Enable verbose/debug output")
 	fps         = getopt.IntLong("fps", 'f', 30, "Target capture frame rate")
 	noStats     = getopt.BoolLong("no-stats", 'n', "Suppress FPS and OCR timing stats")
@@ -102,6 +103,11 @@ var (
 
 func parseArgs() {
 	getopt.Parse()
+
+	if *help {
+		getopt.Usage()
+		common.ExitSuccess()
+	}
 
 	if *verbose {
 		common.DebugEnabled = true

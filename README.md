@@ -18,8 +18,9 @@ Options:
   -s, --source FILE       Video capture device (default: /dev/video0)
   -l, --lang LANG         OCR language(s), comma-separated (default: eng)
                             Examples: jpn, eng+jpn
-  -w, --width N           Capture width in pixels (default: 1920)
-  -h, --height N          Capture height in pixels (default: 1080)
+  -h, --help              Show help and exit
+  -W, --width N           Capture width in pixels (default: 1920)
+  -H, --height N          Capture height in pixels (default: 1080)
   -f, --fps N             Target capture frame rate (default: 30)
   -r, --region x,y,w,h   OCR region; repeat for multiple regions
                             Default: full frame
