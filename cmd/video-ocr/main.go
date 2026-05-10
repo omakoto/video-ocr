@@ -106,6 +106,7 @@ func parseArgs() {
 
 	if *help {
 		getopt.Usage()
+		fmt.Println("\nSee https://github.com/omakoto/video-ocr for more information.\n")
 		common.ExitSuccess()
 	}
 
