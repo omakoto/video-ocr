@@ -1,61 +1,134 @@
 # video-ocr
 
-## Description
+Real-time OCR on a live video feed. Opens a capture device (webcam), displays the video in a window with highlighted OCR regions, and prints recognized text to stdout.
 
-Using OpenCV, open the first capture device and run OCR on the input.
+## Features
+
+- Runs OCR asynchronously so frame capture is never blocked
+- Supports multiple independent OCR regions in a single run
+- Interactive: pause/resume OCR, toggle stats, and define regions by mouse drag
+- Multi-language support via Tesseract (English, Japanese, and more)
 
 ## Usage
 
-
-Example:
 ```
-video-ocr [-s /dev/videoN]  [-l LANG] [-w WIDTH] [-h HEIGHT] [-r X,Y,W,H] ...
+video-ocr [OPTIONS]
 
-  -s FILE:    Capture source device
-  -l LANG:    OCR language (eng, jpn, etc)
-  -r X,Y,W,H: Specify rectangle to apply OCR. Multiple rectangles can be specified.
-  
-  See the source code for the other options.
+Options:
+  -s, --source FILE       Video capture device (default: /dev/video0)
+  -l, --lang LANG         OCR language(s), comma-separated (default: eng)
+                            Examples: jpn, eng+jpn
+  -w, --width N           Capture width in pixels (default: 1920)
+  -h, --height N          Capture height in pixels (default: 1080)
+  -f, --fps N             Target capture frame rate (default: 30)
+  -r, --region x,y,w,h   OCR region; repeat for multiple regions
+                            Default: full frame
+  -i, --interval N        Run OCR once every N frames (default: 8)
+  -q, --ocr-scale F       Scale image before OCR, 0.1–1.0 (default: 1.0)
+                            Smaller values are faster but less accurate
+  -n, --no-stats          Suppress FPS and OCR timing stats
+  -t, --Wait N            Milliseconds to sleep between frame captures (default: 1)
+  -v, --verbose           Enable verbose/debug output
 ```
+
+### Examples
+
+OCR with the default webcam, English only:
+```
+video-ocr
+```
+
+Use a second camera, Japanese text:
+```
+video-ocr -s /dev/video2 -l jpn
+```
+
+OCR only a specific region of the frame (e.g. a subtitle bar at the bottom):
+```
+video-ocr -r 0,900,1920,120
+```
+
+OCR two separate regions simultaneously:
+```
+video-ocr -r 100,50,400,80 -r 100,200,400,80
+```
+
+Mixed English/Japanese on a 720p camera, scaled down for faster OCR:
+```
+video-ocr -s /dev/video1 -l eng+jpn -w 1280 -h 720 -q 0.5
+```
+
+## Interactive controls
+
+| Key / Action          | Effect                                      |
+|-----------------------|---------------------------------------------|
+| `ESC`                 | Quit                                        |
+| `P`                   | Pause / resume OCR                          |
+| `S`                   | Toggle FPS/OCR stats display                |
+| Left-click and drag   | Print the region coordinates (`x,y,w,h`) to stdout so you can copy them into a `-r` flag |
+
+## Output format
+
+All output lines start with `#`. Lines without `#` are recognized text.
+
+```
+# Input: Frame Width: 1920
+# Input: Frame Height: 1080
+# Input: FPS: 30
+# Languages: [eng]
+# Info: [ESC] key to close app
+# Info: [P] key to toggle OCR
+# Info: [S] key to toggle stats
+# Text 0: Hello, world
+# Stats: FPS: 29    Last capture ms: 2    Last OCR ms: 145
+```
+
+To extract only recognized text, filter out comment lines:
+```
+video-ocr | grep -v '^#'
+```
+
 ## Installation
 
 ```
 go install github.com/omakoto/video-ocr/cmd/...@latest
 ```
 
-Or, after `git clone`, run this:
+Or, after `git clone`:
 ```
-$ ./00install.bash
-```
-
-## Installing dependencies
-
-### GoCV (Golang OpenCV binding)
-
-- Get from https://github.com/hybridgroup/gocv
-- Follow the install instructions in the README
-- As of 2024-12-30, I had to make the following change to `Makefile` on Ubuntu 24:
-  - `libtbb2` doesn't exist, so just remove it.
-  - Change `libdc1394-22-dev` to `libdc1394-dev`
-
-```
-diff --git a/Makefile b/Makefile
-index ccc035d..bcf4bbb 100644
---- a/Makefile
-+++ b/Makefile
-@@ -18,7 +18,7 @@ BUILD_SHARED_LIBS?=ON
- 
- # Package list for each well-known Linux distribution
- RPMS=cmake curl wget git gtk2-devel libpng-devel libjpeg-devel libtiff-devel tbb tbb-devel libdc1394-devel unzip gcc-c++
--DEBS=unzip wget build-essential cmake curl git libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev libtbb2 libtbb-dev libjpeg-dev libpng-dev libtiff-dev libdc1394-22-dev libharfbuzz-dev libfreetype6-dev
-+DEBS=unzip wget build-essential cmake curl git libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev libtbb-dev libjpeg-dev libpng-dev libtiff-dev libdc1394-dev libharfbuzz-dev libfreetype6-dev
- DEBS_BOOKWORM=unzip wget build-essential cmake curl git libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev libtbbmalloc2 libtbb-dev libjpeg-dev libpng-dev libtiff-dev libharfbuzz-dev libfreetype6-dev
- DEBS_UBUNTU_JAMMY=unzip wget build-essential cmake curl git libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev libtbb2 libtbb-dev libjpeg-dev libpng-dev libtiff-dev libdc1394-dev libharfbuzz-dev libfreetype6-dev
- JETSON=build-essential cmake git unzip pkg-config libjpeg-dev libpng-dev libtiff-dev libavcodec-dev libavformat-dev libswscale-dev libgtk2.0-dev libcanberra-gtk* libxvidcore-dev libx264-dev libgtk-3-dev libtbb2 libtbb-dev libdc1394-22-dev libv4l-dev v4l-utils libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libavresample-dev libvorbis-dev libxine2-dev libfaac-dev libmp3lame-dev libtheora-dev libopencore-amrnb-dev libopencore-amrwb-dev libopenblas-dev libatlas-base-dev libblas-dev liblapack-dev libeigen3-dev gfortran libhdf5-dev protobuf-compiler libprotobuf-dev libgoogle-glog-dev libgflags-dev
+./00install.bash
 ```
 
-### gosseract (OCR using Tesseract)
+## Dependencies
 
-- Install `tesseract`: https://github.com/tesseract-ocr/tessdoc/blob/main/Installation.md
-  - `sudo apt install tesseract-ocr libtesseract-dev`
-  - `sudo apt install -y tesseract-ocr-eng tesseract-ocr-jpn`
+### OpenCV
+
+Install the runtime libraries and development headers:
+```
+sudo apt install libopencv-dev
+```
+
+This provides the `opencv4.pc` pkg-config file that GoCV needs to locate headers and libraries at build time. The runtime libraries alone (e.g. `libopencv-core410`) are not sufficient.
+
+### GoCV (Go OpenCV bindings)
+
+- Source: https://github.com/hybridgroup/gocv
+- Follow the install instructions in the GoCV README.
+
+Known fixes for **Ubuntu 24**:
+- `libtbb2` does not exist — remove it from `DEBS`.
+- Rename `libdc1394-22-dev` → `libdc1394-dev`.
+
+```diff
+-DEBS=... libtbb2 libtbb-dev ... libdc1394-22-dev ...
++DEBS=... libtbb-dev ... libdc1394-dev ...
+```
+
+### gosseract (Tesseract OCR)
+
+```
+sudo apt install tesseract-ocr libtesseract-dev
+sudo apt install tesseract-ocr-eng tesseract-ocr-jpn   # add languages as needed
+```
+
+Full language list: https://github.com/tesseract-ocr/tessdoc/blob/main/Installation.md

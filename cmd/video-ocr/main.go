@@ -83,21 +83,21 @@ func (o *ocrRegionArg) Set(value string, opt getopt.Option) error {
 }
 
 var (
-	sourceFile  = getopt.StringLong("source", 's', "/dev/video0", "Input device file")
-	ocrInterval = getopt.IntLong("interval", 'i', 8, "Min interval for performing OCR")
-	wait        = getopt.IntLong("Wait", 't', 1, "Sleep millis between frames")
-	languages   = getopt.StringLong("lang", 'l', "eng", "Comma-separated list of languages")
-	width       = getopt.IntLong("width", 'w', 1920, "Width of the video capture")
-	height      = getopt.IntLong("height", 'h', 1080, "Height of the video capture")
-	verbose     = getopt.BoolLong("verbose", 'v', "Make verbose")
-	fps         = getopt.IntLong("fps", 'f', 30, "Capture FPS")
-	noStats     = getopt.BoolLong("no-stats", 'n', "Disable stats")
+	sourceFile  = getopt.StringLong("source", 's', "/dev/video0", "Video capture device (e.g. /dev/video0, /dev/video1)")
+	ocrInterval = getopt.IntLong("interval", 'i', 8, "Run OCR once every N frames")
+	wait        = getopt.IntLong("Wait", 't', 1, "Milliseconds to sleep between frame captures")
+	languages   = getopt.StringLong("lang", 'l', "eng", "OCR language(s), comma-separated (e.g. eng, jpn, eng+jpn)")
+	width       = getopt.IntLong("width", 'w', 1920, "Capture width in pixels")
+	height      = getopt.IntLong("height", 'h', 1080, "Capture height in pixels")
+	verbose     = getopt.BoolLong("verbose", 'v', "Enable verbose/debug output")
+	fps         = getopt.IntLong("fps", 'f', 30, "Target capture frame rate")
+	noStats     = getopt.BoolLong("no-stats", 'n', "Suppress FPS and OCR timing stats")
 
 	ocrScale float64 = 1
-	_                = getopt.FlagLong(&ocrScale, "ocr-scale", 'q', "Image scale for feeding OCR [0.1 - 1]")
+	_                = getopt.FlagLong(&ocrScale, "ocr-scale", 'q', "Scale image before OCR (0.1–1.0); smaller = faster but less accurate")
 
 	r = ocrRegionArg{}
-	_ = getopt.FlagLong((*ocrRegionArg)(&r), "region", 'r', "Region to OCR in the form of x,y,w,h")
+	_ = getopt.FlagLong((*ocrRegionArg)(&r), "region", 'r', "OCR region as x,y,w,h; repeat to specify multiple regions")
 )
 
 func parseArgs() {
